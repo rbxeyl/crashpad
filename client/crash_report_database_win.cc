@@ -39,6 +39,20 @@ namespace crashpad {
 
 namespace {
 
+UUID UUIDFromReportPath(const base::FilePath& path) {
+  UUID uuid;
+  uuid.InitializeFromString(path.RemoveFinalExtension().BaseName().value());
+  return uuid;
+}
+
+bool AttachmentNameIsOK(const std::string& name) {
+  for (const char c : name) {
+    if (c != '_' && c != '-' && c != '.' && !isalnum(c))
+      return false;
+  }
+  return true;
+}
+
 constexpr wchar_t kReportsDirectory[] = L"reports";
 constexpr wchar_t kMetadataFileName[] = L"metadata";
 constexpr wchar_t kAttachmentsDirectory[] = L"attachments";
@@ -789,9 +803,11 @@ OperationStatus CrashReportDatabaseWin::LookUpCrashReport(const UUID& uuid,
     return kDatabaseError;
   // Find and return a copy of the matching report.
   const ReportDisk* report_disk;
-  OperationStatus os = metadata->FindSingleReport(uuid, &report_disk);
+  const OperationStatus os = metadata->FindSingleReport(uuid, &report_disk);
   if (os == kNoError)
     *report = *report_disk;
+  if (os == kReportNotFound)
+    RemoveAttachmentsByUUID(uuid);
   return os;
 }
 
@@ -893,6 +909,8 @@ OperationStatus CrashReportDatabaseWin::DeleteReport(const UUID& uuid) {
   if (os != kNoError)
     return os;
 
+  RemoveAttachmentsByUUID(uuid);
+
   if (!DeleteFile(report_path.value().c_str())) {
     PLOG(ERROR) << "DeleteFile "
                 << base::UTF16ToUTF8(report_path.value());
@@ -926,7 +944,65 @@ OperationStatus CrashReportDatabaseWin::SkipReportUpload(
 
 std::unique_ptr<Metadata> CrashReportDatabaseWin::AcquireMetadata() {
   base::FilePath metadata_file = base_dir_.Append(kMetadataFileName);
-  return Metadata::Create(metadata_file, base_dir_.Append(kReportsDirectory));
+  return Metadata::Create(metadata_file,
+                          base_dir_.Append(kReportsDirectory));
+}
+
+void CrashReportDatabaseWin::CleanOrphanedAttachments()
+{
+    base::FilePath root_attachments_dir(base_dir_.Append(kAttachmentsDirectory));
+    DirectoryReader reader;
+    if (!reader.Open(root_attachments_dir)) {
+      LOG(ERROR) << "no attachments dir";
+      return;
+    }
+
+    std::unique_ptr<Metadata> metadata(AcquireMetadata());
+    if (!metadata)
+        return;
+
+    base::FilePath filename;
+    DirectoryReader::Result result;
+    while ((result = reader.NextFile(&filename)) ==
+           DirectoryReader::Result::kSuccess) {
+      const base::FilePath path(root_attachments_dir.Append(filename));
+      if (IsDirectory(path, false)) {
+        UUID uuid;
+        if (!uuid.InitializeFromString(filename.value())) {
+          LOG(ERROR) << "unexpected attachment dir name " << base::UTF16ToUTF8(filename.value());
+          continue;
+        }
+
+        // Check to see if the report exist.
+        const ReportDisk* report_disk;
+        const OperationStatus os = metadata->FindSingleReport(uuid, &report_disk);
+        if (os != OperationStatus::kReportNotFound) {
+          continue;
+        }
+
+        // Couldn't find a report, assume these attachments are orphaned.
+        RemoveAttachmentsByUUID(uuid);
+      }
+    }
+}
+
+void CrashReportDatabaseWin::RemoveAttachmentsByUUID(const UUID &uuid)
+{
+    base::FilePath attachments_dir = AttachmentsPath(uuid);
+    DirectoryReader reader;
+    if (!reader.Open(attachments_dir)) {
+      return;
+    }
+
+    base::FilePath filename;
+    DirectoryReader::Result result;
+    while ((result = reader.NextFile(&filename)) ==
+           DirectoryReader::Result::kSuccess) {
+      const base::FilePath filepath(attachments_dir.Append(filename));
+      LoggingRemoveFile(filepath);
+    }
+
+    LoggingRemoveDirectory(attachments_dir);
 }
 
 void CrashReportDatabaseWin::CleanOrphanedAttachments() {
