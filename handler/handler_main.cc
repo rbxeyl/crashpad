@@ -260,6 +260,31 @@ bool AddKeyValueToMap(std::map<std::string, base::FilePath>* map,
 }
 #endif // OS_WIN || OS_FUCHSIA || OS_LINUX
 
+// Overloaded version, to accept base::FilePath as a VALUE.
+bool AddKeyValueToMap(std::map<std::string, base::FilePath>* map,
+                      const std::string& key_value,
+                      const char* argument) {
+  std::string key;
+  std::string raw_value;
+  if (!SplitStringFirst(key_value, '=', &key, &raw_value)) {
+    LOG(ERROR) << argument << " requires NAME=PATH";
+    return false;
+  }
+
+#ifdef OS_WIN
+  base::FilePath value(base::UTF8ToUTF16(raw_value));
+#else
+  base::FilePath value(raw_value);
+#endif
+
+  base::FilePath old_value;
+  if (!MapInsertOrReplace(map, key, value, &old_value)) {
+    LOG(WARNING) << argument << " has duplicate name " << key
+                 << ", discarding value " << old_value.value().c_str();
+  }
+  return true;
+}
+
 // Calls Metrics::HandlerLifetimeMilestone, but only on the first call. This is
 // to prevent multiple exit events from inadvertently being recorded, which
 // might happen if a crash occurs during destruction in what would otherwise be
@@ -848,7 +873,7 @@ int HandlerMain(int argc,
         }
         break;
       }
-#endif  // OS_CHROMEOS
+#endif
       case kOptionHelp: {
         Usage(me);
         MetricsRecordExit(Metrics::LifetimeMilestone::kExitedEarly);
