@@ -146,6 +146,18 @@ source_set("handler_test") {
   }
 }
 
+  if (crashpad_is_linux) {
+  crashpad_executable("crashpad_victim_test") {
+    sources = [
+      "victim_test_main.cc",
+    ]
+
+    deps = [
+      "../util",
+    ]
+  }
+}
+
 crashpad_executable("crashpad_handler") {
   sources = [
     "main.cc",

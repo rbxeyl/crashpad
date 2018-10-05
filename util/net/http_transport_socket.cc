@@ -34,7 +34,11 @@
 #include "util/string/split_string.h"
 
 #if defined(CRASHPAD_USE_BORINGSSL)
-#include <openssl/ssl.h>
+  #if defined(OS_ANDROID)
+  #include "openssl/ssl.h"
+  #else
+  #include <openssl/ssl.h>
+  #endif
 #endif
 
 namespace crashpad {
@@ -112,7 +116,11 @@ class SSLStream : public Stream {
       return false;
     }
 
+#if defined(OS_ANDROID)
+    SSL_CTX_set_verify(ctx_.get(), SSL_VERIFY_NONE, nullptr);
+#else
     SSL_CTX_set_verify(ctx_.get(), SSL_VERIFY_PEER, nullptr);
+#endif
     SSL_CTX_set_verify_depth(ctx_.get(), 5);
 
     if (!root_cert_path.empty()) {
@@ -134,6 +142,7 @@ class SSLStream : public Stream {
         LOG(ERROR) << "SSL_CTX_load_verify_locations";
         return false;
       }
+#elif defined(OS_ANDROID)
 #else
 #error cert store location
 #endif
