@@ -159,6 +159,15 @@ void Usage(const base::FilePath& me) {
 "                              clients\n"
 "      --trace-parent-with-exception=EXCEPTION_INFORMATION_ADDRESS\n"
 "                              request a dump for the handler's parent process\n"
+"      --trace-parent-pid=pid\n"
+"                              Override --trace-parent-with-exception to apply to a different pid, for testing\n"
+"      --initial-client-fd=FD  a socket connected to a client.\n"
+#if defined(OS_LINUX)
+"      --additional-tracer=PATH  will also launch the tracer after crashpad is done.\n"
+"      --additional-tracer-opt=KEY=VALUE\n"
+"                              add a comand line option for the additional tracer.\n"
+"                              for exampe: --additional-tracer-opt=--max-variable-depth=10,4\n"
+#endif
 #endif  // OS_LINUX || OS_ANDROID
 "      --url=URL               send crash reports to this Breakpad server URL,\n"
 "                              only if uploads are enabled for the database\n"
@@ -170,9 +179,9 @@ void Usage(const base::FilePath& me) {
 "                              causes /sbin/crash_reporter to leave dumps in\n"
 "                              this directory instead of the normal location\n"
 #endif  // OS_CHROMEOS
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
 "      --attachment=NAME=PATH  attach a copy of a file, along with a crash dump\n"
-#endif // OS_WIN || OS_FUCHSIA || OS_LINUX
+#endif
 "      --help                  display this help and exit\n"
 "      --version               output version information and exit\n",
           me.value().c_str());
@@ -193,9 +202,14 @@ struct Options {
   bool reset_own_crash_exception_port_to_system_default;
 #elif defined(OS_LINUX) || defined(OS_ANDROID)
   VMAddress exception_information_address;
-  VMAddress sanitization_information_address;
   int initial_client_fd;
+  int parent_pid;
+  VMAddress sanitization_information_address;
   bool shared_client_connection;
+#if defined(OS_LINUX)
+  base::FilePath additional_tracer;
+  std::vector<std::string> additional_tracer_opts;
+#endif
 #elif defined(OS_WIN)
   std::string pipe_name;
   InitialClientData initial_client_data;
@@ -233,7 +247,7 @@ bool AddKeyValueToMap(std::map<std::string, std::string>* map,
   }
   return true;
 }
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
 // Overloaded version, to accept base::FilePath as a VALUE.
 bool AddKeyValueToMap(std::map<std::string, base::FilePath>* map,
                       const std::string& key_value,
@@ -604,6 +618,11 @@ int HandlerMain(int argc,
     kOptionSanitizationInformation,
     kOptionSharedClientConnection,
     kOptionTraceParentWithException,
+    kOptionTraceParentPid,
+  #if defined(OS_LINUX)
+    kOptionAdditionalTracer,
+    kOptionAdditionalTracerOpt,
+  #endif
 #endif
     kOptionURL,
 #if defined(OS_CHROMEOS)
@@ -611,9 +630,9 @@ int HandlerMain(int argc,
     kOptionMinidumpDirForTests,
 #endif  // OS_CHROMEOS
 
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
     kOptionAttachment,
-#endif // OS_WIN || OS_FUCHSIA || OS_LINUX
+#endif
     // Standard options.
     kOptionHelp = -2,
     kOptionVersion = -3,
@@ -676,6 +695,14 @@ int HandlerMain(int argc,
      required_argument,
      nullptr,
      kOptionTraceParentWithException},
+    {"trace-parent-pid",
+     required_argument,
+     nullptr,
+     kOptionTraceParentPid},
+  #if defined(OS_LINUX)
+    {"additional-tracer", required_argument, nullptr, kOptionAdditionalTracer},
+    {"additional-tracer-opt", required_argument, nullptr, kOptionAdditionalTracerOpt},
+  #endif
 #endif  // OS_LINUX || OS_ANDROID
     {"url", required_argument, nullptr, kOptionURL},
 #if defined(OS_CHROEMOS)
@@ -688,9 +715,9 @@ int HandlerMain(int argc,
       nullptr,
       kOptionMinidumpDirForTests},
 #endif  // OS_CHROMEOS
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
     {"attachment", required_argument, nullptr, kOptionAttachment},
-#endif // OS_WIN || OS_FUCHSIA || OS_LINUX
+#endif
     {"help", no_argument, nullptr, kOptionHelp},
     {"version", no_argument, nullptr, kOptionVersion},
     {nullptr, 0, nullptr, 0},
@@ -701,12 +728,15 @@ int HandlerMain(int argc,
   options.handshake_fd = -1;
 #endif
   options.identify_client_via_url = true;
-#if defined(OS_LINUX) || defined(OS_ANDROID)
-  options.initial_client_fd = kInvalidFileHandle;
-#endif
   options.periodic_tasks = true;
   options.rate_limit = true;
   options.upload_gzip = true;
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+  options.exception_information_address = 0;
+  options.initial_client_fd = kInvalidFileHandle;
+  options.sanitization_information_address = 0;
+  options.parent_pid = getppid();
+#endif
 
   int opt;
   while ((opt = getopt_long(argc, argv, "", long_options, nullptr)) != -1) {
@@ -817,8 +847,8 @@ int HandlerMain(int argc,
       }
       case kOptionSharedClientConnection: {
         options.shared_client_connection = true;
-        break;
-      }
+		break;
+	  }
       case kOptionTraceParentWithException: {
         if (!StringToNumber(optarg, &options.exception_information_address)) {
           ToolSupport::UsageHint(
@@ -827,6 +857,25 @@ int HandlerMain(int argc,
         }
         break;
       }
+      case kOptionTraceParentPid: {
+        if (!StringToNumber(optarg, &options.parent_pid)) {
+          ToolSupport::UsageHint(
+              me, "failed to parse --trace-parent-pid");
+          return ExitFailure();
+        }
+        break;
+      }
+  #if defined(OS_LINUX)
+      case kOptionAdditionalTracer: {
+        options.additional_tracer = base::FilePath(
+            ToolSupport::CommandLineArgumentToFilePathStringType(optarg));
+        break;
+      }
+      case kOptionAdditionalTracerOpt: {
+        options.additional_tracer_opts.push_back(optarg); 
+        break;
+      }
+  #endif
 #endif  // OS_LINUX || OS_ANDROID
       case kOptionURL: {
         options.url = optarg;
@@ -841,7 +890,7 @@ int HandlerMain(int argc,
         options.minidump_dir_for_tests = base::FilePath(
             ToolSupport::CommandLineArgumentToFilePathStringType(optarg));
 #endif  // OS_CHROMEOS
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
       case kOptionAttachment: {
         if (!AddKeyValueToMap(&options.attachments, optarg, "--attachment")) {
           return ExitFailure();
@@ -1004,10 +1053,9 @@ int HandlerMain(int argc,
       database.get(),
       static_cast<CrashReportUploadThread*>(upload_thread.Get()),
       &options.annotations,
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_MACOSX)
-      // TODO(scottmg): for all platforms.
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
       &options.attachments,
-#endif // OS_WIN || OS_FUCHSIA || OS_LINUX || OS_MACOSX
+#endif
       user_stream_sources);
 #endif  // OS_CHROMEOS
 
@@ -1017,9 +1065,14 @@ int HandlerMain(int argc,
     info.exception_information_address = options.exception_information_address;
     info.sanitization_information_address =
         options.sanitization_information_address;
+#if defined(OS_LINUX)
+    return exception_handler->HandleExceptionWithAdditionalTracer(
+        options.additional_tracer, options.additional_tracer_opts,
+        getppid(), geteuid(), info) ? EXIT_SUCCESS : ExitFailure();
+#endif
     return exception_handler->HandleException(getppid(), geteuid(), info)
-               ? EXIT_SUCCESS
-               : ExitFailure();
+	       ? EXIT_SUCCESS
+           : ExitFailure();
   }
 #endif  // OS_LINUX || OS_ANDROID
 
@@ -1122,8 +1175,10 @@ int HandlerMain(int argc,
 
 #if defined(OS_WIN)
   if (options.initial_client_data.IsValid()) {
-    exception_handler_server.InitializeWithInheritedDataForInitialClient(
+    if (!exception_handler_server.InitializeWithInheritedDataForInitialClient(
         options.initial_client_data, exception_handler.get());
+      return EXIT_FAILURE;
+    }
   }
 #elif defined(OS_LINUX) || defined(OS_ANDROID)
   if (options.initial_client_fd == kInvalidFileHandle ||

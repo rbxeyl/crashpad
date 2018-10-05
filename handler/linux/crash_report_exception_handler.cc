@@ -14,6 +14,11 @@
 
 #include "handler/linux/crash_report_exception_handler.h"
 
+#include <errno.h>
+#include <string.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <vector>
 #include <memory>
 #include <utility>
 
@@ -28,6 +33,8 @@
 #include "util/misc/implicit_cast.h"
 #include "util/misc/metrics.h"
 #include "util/misc/uuid.h"
+#include "util/roblox/user_callback_functions.h"
+#include "handler/minidump_to_upload_parameters.h"
 
 namespace crashpad {
 
@@ -44,6 +51,83 @@ CrashReportExceptionHandler::CrashReportExceptionHandler(
       user_stream_data_sources_(user_stream_data_sources) {}
 
 CrashReportExceptionHandler::~CrashReportExceptionHandler() = default;
+
+#if defined(OS_LINUX)
+bool CrashReportExceptionHandler::HandleExceptionWithAdditionalTracer(
+    const base::FilePath& tracer_pathname,
+    std::vector<std::string>& tracer_args,
+    pid_t client_process_id,
+    const ExceptionHandlerProtocol::ClientInformation& info,
+    UUID* local_report_id) {
+  UUID report_uuid;
+  if (!HandleException(client_process_id, info, 0, nullptr, &report_uuid)) {
+    return false;
+  }
+  if (local_report_id) {
+    *local_report_id = report_uuid;
+  }
+  LOG(INFO) << "Crashpad generated report: " << report_uuid.ToString();
+
+  if (CrashpadUploadMiniDump()) {
+    LOG(INFO) << "Skip additional tracer, whose format is not minidump";
+    return true;
+  }
+
+  CrashReportDatabase::Report report;
+  if (database_->LookUpCrashReport(report_uuid, &report) !=
+      CrashReportDatabase::kNoError) {
+    LOG(ERROR) << "Failed to find report " << report_uuid.ToString();
+    return false;
+  }
+
+  std::string fn = report.file_path.RemoveFinalExtension().value() + ".btt";
+  std::string tracer(tracer_pathname.value());
+  std::vector<const char*> argv;
+  if (!MakeAdditionalTracerParameter(
+      tracer, tracer_args, argv, client_process_id, fn)) {
+    return false;
+  }
+  LOG(INFO) << "Start additional tracer with arguments:";
+  for (auto v : tracer_args) {
+    LOG(INFO) << v;
+  }
+
+  int status;
+  pid_t pid_tracer = vfork();
+  if (pid_tracer < 0) {
+    return false;
+  }
+  if (pid_tracer == 0) {
+    execv(tracer.c_str(), const_cast<char* const*>(argv.data()));
+  }
+
+  int result = waitpid(pid_tracer, &status, 0);
+  if (result < 0) {
+    LOG(ERROR) << tracer << " error: " << strerror(errno);
+    LOG(ERROR) << tracer << " state: " << status;
+    return false;
+  }
+  if (!WIFEXITED(status)) {
+    LOG(ERROR) << tracer << " should have exited, but did not";
+    if (WIFSTOPPED(status)) {
+      LOG(ERROR) << tracer << " stopped on signal " << WSTOPSIG(status);
+    }
+    return false;
+  }
+
+  LOG(INFO) << "additional tracer succeed";
+  if (upload_thread_) {
+    LOG(INFO) << "uploading tracer report";
+    upload_thread_->ReportPending(report_uuid);
+    if (!upload_thread_->WaitForPendingUpload(60000)) {
+      return false;
+    }
+  }
+
+  LOG(INFO) << "Done uploading tracer report";
+  return true;
+}
+#endif
 
 bool CrashReportExceptionHandler::HandleException(
     pid_t client_process_id,
@@ -108,6 +192,7 @@ bool CrashReportExceptionHandler::HandleExceptionWithConnection(
     return false;
   }
 
+  RunUserCallbackOnDumpEvent(nullptr);
   UUID client_id;
   Settings* const settings = database_->GetSettings();
   if (settings) {
@@ -129,7 +214,6 @@ bool CrashReportExceptionHandler::HandleExceptionWithConnection(
   }
 
   process_snapshot->SetReportID(new_report->ReportID());
-
   ProcessSnapshot* snapshot =
       sanitized_snapshot
           ? implicit_cast<ProcessSnapshot*>(sanitized_snapshot.get())
@@ -154,7 +238,8 @@ bool CrashReportExceptionHandler::HandleExceptionWithConnection(
       FileWriter* writer = new_report->AddAttachment(it.first);
       if (writer) {
         std::string contents;
-        if (!LoggingReadEntireFile(it.second, &contents)) {
+        int64_t nBytes = CrashpadUploadAttachmentFileSizeLimit();
+        if (!LoggingReadLastPartOfFile(it.second, &contents, (FileOffset)nBytes)) {
           // Not being able to read the file isn't considered fatal, and
           // should not prevent the report from being processed.
           continue;
@@ -173,7 +258,7 @@ bool CrashReportExceptionHandler::HandleExceptionWithConnection(
     return false;
   }
 
-  if (upload_thread_) {
+  if (upload_thread_ && CrashpadUploadMiniDump()) {
     upload_thread_->ReportPending(uuid);
   }
 
