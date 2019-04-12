@@ -406,7 +406,7 @@ class CrashpadClient {
   static void CrashWithoutDump(const std::string& message);
 
   //! \brief The type for custom handlers installed by clients.
-  using FirstChanceHandler = bool (*)(int, siginfo_t*, ucontext_t*);
+  using FirstChanceHandler = bool (*)(int, siginfo_t*, void* ucontext);
 
   //! \brief Installs a custom crash signal handler which runs before the
   //!     currently installed Crashpad handler.
