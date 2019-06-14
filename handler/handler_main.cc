@@ -1067,8 +1067,7 @@ int HandlerMain(int argc,
       database.get(),
       static_cast<CrashReportUploadThread*>(upload_thread.Get()),
       &options.annotations,
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID)
-      // TODO(scottmg): for all platforms.
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
       &options.attachments,
 #endif
       user_stream_sources);
