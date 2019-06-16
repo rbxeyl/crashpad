@@ -119,13 +119,14 @@ int64_t CrashpadUploadAttachmentFileSizeLimit(int default_kbytes) {
 }
 
 int CrashpadUploadPercentage(int default_percentage) {
-  return GetAnnotationInt64("UploadPercentage", default_percentage);
+  return (int) GetAnnotationInt64("UploadPercentage", default_percentage);
 }
 
 bool CrashpadUploadMiniDump() {
   return GetAnnotationString("Format") == "minidump";
 }
 
+#if defined(OS_LINUX)
 bool MakeAdditionalTracerParameter(
   std::string& tracer_pathname,
   std::vector<std::string>& args,
@@ -186,5 +187,6 @@ bool MakeAdditionalTracerParameter(
   StringVectorToCStringVector(args, &argv);
   return true;
 }
+#endif
 
 }  // namespace crashpad

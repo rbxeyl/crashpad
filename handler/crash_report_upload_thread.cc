@@ -304,7 +304,9 @@ CrashReportUploadThread::UploadResult CrashReportUploadThread::UploadReport(
                                              report->uuid.ToString() + ".dmp",
                                              reader,
                                              "application/octet-stream");
-  } else if (parameters.count("Format") && parameters["Format"] == "btt") {
+  } 
+#if defined(OS_LINUX)
+  else if (parameters.count("Format") && parameters["Format"] == "btt") {
     // A hacky way to replace the report's *.dmp file with a different one.
     base::FilePath btt_file(
       report->file_path.RemoveFinalExtension().value() + ".btt"); 
@@ -320,7 +322,9 @@ CrashReportUploadThread::UploadResult CrashReportUploadThread::UploadReport(
                                              report->uuid.ToString() + ".btt",
                                              reader,
                                              "application/octet-stream");
-  } else {
+  }
+#endif
+  else {
     LOG(ERROR) << "Unknown upload format";
     return UploadResult::kPermanentFailure;
   }

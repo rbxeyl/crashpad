@@ -73,6 +73,7 @@ int CrashpadUploadPercentage(int default_percentage = 10);
 //! \brief whether the configured uploading file format is "minidump"
 bool CrashpadUploadMiniDump();
 
+#if defined(OS_LINUX)
 //! \brief Form paramter array suitable for execv the backtrace ptrace tool.
 //!
 //! \parma[in]  tracer_pathname  The pathname of the tracer executable.
@@ -83,6 +84,7 @@ bool CrashpadUploadMiniDump();
 bool MakeAdditionalTracerParameter(
   std::string& tracer_pathname, std::vector<std::string>& args,
   std::vector<const char*>& argv, pid_t tracee, const std::string& outfile);
-}  // namespace crashpad
+#endif
 
+}  // namespace crashpad
 #endif  // HANDLER_MINIDUMP_TO_UPLOAD_PARAMETERS_H_

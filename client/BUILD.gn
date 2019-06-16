@@ -151,5 +151,6 @@ source_set("client_test") {
 
   if (crashpad_is_win) {
     data_deps += [ "../handler:crashpad_handler_console" ]
+    cflags = [ "/wd4503" ] # decorated name length exceeded, name was truncated
   }
 }
