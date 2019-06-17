@@ -159,8 +159,6 @@ void Usage(const base::FilePath& me) {
 "                              clients\n"
 "      --trace-parent-with-exception=EXCEPTION_INFORMATION_ADDRESS\n"
 "                              request a dump for the handler's parent process\n"
-"      --trace-parent-pid=pid\n"
-"                              Override --trace-parent-with-exception to apply to a different pid, for testing\n"
 "      --initial-client-fd=FD  a socket connected to a client.\n"
 "      --sanitization_information=SANITIZATION_INFORMATION_ADDRESS\n"
 "                              the address of a SanitizationInformation struct.\n"
@@ -181,7 +179,7 @@ void Usage(const base::FilePath& me) {
 "                              causes /sbin/crash_reporter to leave dumps in\n"
 "                              this directory instead of the normal location\n"
 #endif  // OS_CHROMEOS
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
 "      --attachment=NAME=PATH  attach a copy of a file, along with a crash dump\n"
 #endif
 "      --help                  display this help and exit\n"
@@ -205,7 +203,6 @@ struct Options {
 #elif defined(OS_LINUX) || defined(OS_ANDROID)
   VMAddress exception_information_address;
   int initial_client_fd;
-  int parent_pid;
   VMAddress sanitization_information_address;
   bool shared_client_connection;
 #if defined(OS_LINUX)
@@ -249,7 +246,7 @@ bool AddKeyValueToMap(std::map<std::string, std::string>* map,
   }
   return true;
 }
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
 // Overloaded version, to accept base::FilePath as a VALUE.
 bool AddKeyValueToMap(std::map<std::string, base::FilePath>* map,
                       const std::string& key_value,
@@ -632,7 +629,7 @@ int HandlerMain(int argc,
     kOptionMinidumpDirForTests,
 #endif  // OS_CHROMEOS
 
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX) || defined(OS_ANDROID)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
     kOptionAttachment,
 #endif
     // Standard options.
@@ -717,7 +714,7 @@ int HandlerMain(int argc,
       nullptr,
       kOptionMinidumpDirForTests},
 #endif  // OS_CHROMEOS
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX) || defined(OS_ANDROID)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined (OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
     {"attachment", required_argument, nullptr, kOptionAttachment},
 #endif
     {"help", no_argument, nullptr, kOptionHelp},
@@ -733,7 +730,6 @@ int HandlerMain(int argc,
 #if defined(OS_LINUX) || defined(OS_ANDROID)
   options.initial_client_fd = kInvalidFileHandle;
   options.sanitization_information_address = 0;
-  options.parent_pid = getppid();
 #endif
   options.periodic_tasks = true;
   options.rate_limit = true;
@@ -856,14 +852,6 @@ int HandlerMain(int argc,
         }
         break;
       }
-      case kOptionTraceParentPid: {
-        if (!StringToNumber(optarg, &options.parent_pid)) {
-          ToolSupport::UsageHint(
-              me, "failed to parse --trace-parent-pid");
-          return ExitFailure();
-        }
-        break;
-      }
       case kOptionInitialClientFD: {
         if (!base::StringToInt(optarg, &options.initial_client_fd)) {
           ToolSupport::UsageHint(me, "failed to parse --initial-client-fd");
@@ -904,7 +892,7 @@ int HandlerMain(int argc,
         options.minidump_dir_for_tests = base::FilePath(
             ToolSupport::CommandLineArgumentToFilePathStringType(optarg));
 #endif  // OS_CHROMEOS
-#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID)
+#if defined(OS_WIN) || defined(OS_FUCHSIA) || defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_MACOSX)
       case kOptionAttachment: {
         if (!AddKeyValueToMap(&options.attachments, optarg, "--attachment")) {
           return ExitFailure();
@@ -1084,8 +1072,8 @@ int HandlerMain(int argc,
         options.additional_tracer, options.additional_tracer_opts,
         options.parent_pid, info) ? EXIT_SUCCESS : ExitFailure();
 #endif
-    return exception_handler.HandleException
-        (options.parent_pid, info) ?  EXIT_SUCCESS : ExitFailure();
+    return exception_handler.HandleException(getppid(), info) ? EXIT_SUCCESS
+                                                              : ExitFailure();
   }
 #endif  // OS_LINUX || OS_ANDROID
 
