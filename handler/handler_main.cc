@@ -1070,7 +1070,7 @@ int HandlerMain(int argc,
 #if defined(OS_LINUX)
     return exception_handler.HandleExceptionWithAdditionalTracer(
         options.additional_tracer, options.additional_tracer_opts,
-        options.parent_pid, info) ? EXIT_SUCCESS : ExitFailure();
+        getppid(), info) ? EXIT_SUCCESS : ExitFailure();
 #endif
     return exception_handler.HandleException(getppid(), info) ? EXIT_SUCCESS
                                                               : ExitFailure();
