@@ -110,7 +110,7 @@ class ExceptionHandlerServer {
         const base::FilePath& tracer_pathname,
         std::vector<std::string>& tracer_args,
         pid_t client_process_id,
-        const ClientInformation& info,
+        const ExceptionHandlerProtocol::ClientInformation& info,
         UUID* local_report_id = nullptr) { return false; }
 
     //! \brief Called on the receipt of a crash dump request from a client for a
