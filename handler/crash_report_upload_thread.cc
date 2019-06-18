@@ -283,7 +283,9 @@ CrashReportUploadThread::UploadResult CrashReportUploadThread::UploadReport(
   http_multipart_builder.SetGzipEnabled(options_.upload_gzip);
 
   static constexpr char kMinidumpKey[] = "upload_file_minidump";
+#if defined(OS_LINUX)
   static constexpr char kBacktraceKey[] = "upload_file_backtrace";
+#endif
 
   for (const auto& kv : parameters) {
     if (kv.first == kMinidumpKey) {
