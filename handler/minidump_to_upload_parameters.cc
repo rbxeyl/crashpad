@@ -38,6 +38,8 @@ void InsertOrReplaceMapEntry(std::map<std::string, std::string>* map,
   }
 }
 
+}  // namespace
+
 int64_t GetAnnotationInt64(const std::string& name, int64_t defval) {
   CrashpadInfo* crashpad_info = CrashpadInfo::GetCrashpadInfo();
   SimpleStringDictionary* annotations = crashpad_info->simple_annotations();
@@ -63,8 +65,6 @@ std::string GetAnnotationString(const std::string& name) {
   }
   return retval;
 }
-
-}  // namespace
 
 std::map<std::string, std::string> BreakpadHTTPFormParametersFromMinidump(
     const ProcessSnapshot* process_snapshot) {
@@ -168,6 +168,8 @@ bool MakeAdditionalTracerParameter(
     } else if (key.find("--additional-tracer") == 0) {
       tracer_pathname = key.substr(key.find("=")+1);
       LOG(INFO) << "Replace tracer pathname: " << tracer_pathname;
+    } else if (key.find("_mod_faulting_tid") == 0) {
+      args.push_back("--fault-thread="  + std::string(entry->value));
     } else {
       args.push_back("--kv=" + std::string(entry->key)
                        + ":" + std::string(entry->value));

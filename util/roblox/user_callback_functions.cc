@@ -14,4 +14,17 @@ namespace crashpad
     if (onDumpEvent)
         onDumpEvent(data);
   }
+
+  static UserCallbackAfterDump afterDump = nullptr;
+
+  void SetUserCallbackAfterDump(UserCallbackAfterDump func)
+  {
+    afterDump = func;
+  }
+
+  void RunUserCallbackAfterDump(void* data)
+  {
+    if (afterDump)
+        afterDump(data);
+  }
 }

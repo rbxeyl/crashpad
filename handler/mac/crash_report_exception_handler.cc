@@ -183,6 +183,8 @@ kern_return_t CrashReportExceptionHandler::CatchMachException(
       return KERN_FAILURE;
     }
 
+    // User callback after dump complete to access CrashpadInfo
+    RunUserCallbackAfterDump(nullptr);
     if (process_attachments_) {
       // Note that attachments are read at this point each time rather than once
       // so that if the contents of the file has changed it will be re-read for

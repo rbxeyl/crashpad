@@ -73,6 +73,18 @@ int CrashpadUploadPercentage(int default_percentage = 10);
 //! \brief whether the configured uploading file format is "minidump"
 bool CrashpadUploadMiniDump();
 
+//! \brief Get annotation value as 64-bit integer
+//!
+//! \parma[in]  name  The key name.
+//! \parma[in]  defval  The value to return if key not found
+int64_t GetAnnotationInt64(const std::string& name, int64_t defval);
+
+//! \brief Get annotation value as string
+//!
+//! \parma[in]  name  The key name.
+//! \returns the value string, or empty if key not found
+std::string GetAnnotationString(const std::string& name);
+
 #if defined(OS_LINUX)
 //! \brief Form paramter array suitable for execv the backtrace ptrace tool.
 //!
