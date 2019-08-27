@@ -412,9 +412,13 @@
             'CRASHPAD_USE_BORINGSSL',
           ],
           'link_settings': {
+            # Roblox specific location of openssl, need rerun build/gyp_crashpad_android.py
+            # to generate makefiles when switch between building 32-bit and 64-bit for ARM.
             'libraries': [
-              '<!(pwd)/../../../openssl/android/arm/lib/libssl.a',
-              '<!(pwd)/../../../openssl/android/arm/lib/libcrypto.a',
+              #'<!(pwd)/../../../openssl/android/arm/lib/libssl.a',
+              #'<!(pwd)/../../../openssl/android/arm/lib/libcrypto.a',
+              '<!(pwd)/../../../openssl/android/arm64/lib/libssl.a',
+              '<!(pwd)/../../../openssl/android/arm64/lib/libcrypto.a',
             ],
           },
         }],
