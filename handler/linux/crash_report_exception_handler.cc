@@ -52,6 +52,7 @@ CrashReportExceptionHandler::CrashReportExceptionHandler(
 
 CrashReportExceptionHandler::~CrashReportExceptionHandler() = default;
 
+#if defined(OS_LINUX)
 bool CrashReportExceptionHandler::HandleExceptionWithAdditionalTracer(
     const base::FilePath& tracer_pathname,
     std::vector<std::string>& tracer_args,
@@ -126,6 +127,7 @@ bool CrashReportExceptionHandler::HandleExceptionWithAdditionalTracer(
   LOG(INFO) << "Done uploading tracer report";
   return true;
 }
+#endif
 
 bool CrashReportExceptionHandler::HandleException(
     pid_t client_process_id,
