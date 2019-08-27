@@ -159,9 +159,9 @@ void Usage(const base::FilePath& me) {
 "                              clients\n"
 "      --trace-parent-with-exception=EXCEPTION_INFORMATION_ADDRESS\n"
 "                              request a dump for the handler's parent process\n"
+"      --trace-parent-pid=pid\n"
+"                              Override --trace-parent-with-exception to apply to a different pid, for testing\n"
 "      --initial-client-fd=FD  a socket connected to a client.\n"
-"      --sanitization_information=SANITIZATION_INFORMATION_ADDRESS\n"
-"                              the address of a SanitizationInformation struct.\n"
 #if defined(OS_LINUX)
 "      --additional-tracer=PATH  will also launch the tracer after crashpad is done.\n"
 "      --additional-tracer-opt=KEY=VALUE\n"
@@ -203,6 +203,7 @@ struct Options {
 #elif defined(OS_LINUX) || defined(OS_ANDROID)
   VMAddress exception_information_address;
   int initial_client_fd;
+  int parent_pid;
   VMAddress sanitization_information_address;
   bool shared_client_connection;
 #if defined(OS_LINUX)
@@ -727,13 +728,15 @@ int HandlerMain(int argc,
   options.handshake_fd = -1;
 #endif
   options.identify_client_via_url = true;
-#if defined(OS_LINUX) || defined(OS_ANDROID)
-  options.initial_client_fd = kInvalidFileHandle;
-  options.sanitization_information_address = 0;
-#endif
   options.periodic_tasks = true;
   options.rate_limit = true;
   options.upload_gzip = true;
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+  options.exception_information_address = 0;
+  options.initial_client_fd = kInvalidFileHandle;
+  options.sanitization_information_address = 0;
+  options.parent_pid = getppid();
+#endif
 
   int opt;
   while ((opt = getopt_long(argc, argv, "", long_options, nullptr)) != -1) {
@@ -844,25 +847,20 @@ int HandlerMain(int argc,
       }
       case kOptionSharedClientConnection: {
         options.shared_client_connection = true;
-      case kOptionTraceParentPid: {
-        if (!StringToNumber(optarg, &options.parent_pid)) {
-          ToolSupport::UsageHint(
-              me, "failed to parse --trace-parent-pid");
-          return ExitFailure();
-        }
-        break;
-      }
-      case kOptionInitialClientFD: {
-        if (!base::StringToInt(optarg, &options.initial_client_fd)) {
-          ToolSupport::UsageHint(me, "failed to parse --initial-client-fd");
-          return ExitFailure();
-        }
-        break;
-      }
+		break;
+	  }
       case kOptionTraceParentWithException: {
         if (!StringToNumber(optarg, &options.exception_information_address)) {
           ToolSupport::UsageHint(
               me, "failed to parse --trace-parent-with-exception");
+          return ExitFailure();
+        }
+        break;
+      }
+      case kOptionTraceParentPid: {
+        if (!StringToNumber(optarg, &options.parent_pid)) {
+          ToolSupport::UsageHint(
+              me, "failed to parse --trace-parent-pid");
           return ExitFailure();
         }
         break;
