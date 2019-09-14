@@ -1066,12 +1066,13 @@ int HandlerMain(int argc,
     info.sanitization_information_address =
         options.sanitization_information_address;
 #if defined(OS_LINUX)
-    return exception_handler.HandleExceptionWithAdditionalTracer(
+    return exception_handler->HandleExceptionWithAdditionalTracer(
         options.additional_tracer, options.additional_tracer_opts,
-        getppid(), info) ? EXIT_SUCCESS : ExitFailure();
+        getppid(), geteuid(), info) ? EXIT_SUCCESS : ExitFailure();
 #endif
-    return exception_handler.HandleException(getppid(), info) ? EXIT_SUCCESS
-                                                              : ExitFailure();
+    return exception_handler->HandleException(getppid(), geteuid(), info)
+	       ? EXIT_SUCCESS
+           : ExitFailure();
   }
 #endif  // OS_LINUX || OS_ANDROID
 
